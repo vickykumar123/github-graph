@@ -36,7 +36,7 @@ Thumbs.db
 
 # Model cache (transformers downloads models here)
 .cache/
-models/
+# models/
 
 # Node modules (for frontend later)
 node_modules/
