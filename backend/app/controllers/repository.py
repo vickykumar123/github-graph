@@ -14,16 +14,23 @@ class RepositoryController:
 
     async def add_repository(self, request: RepositoryCreate) -> dict:
           """
-          Add a new repository and create processing task.
+          Add a new repository with immediate metadata fetch.
+
+          Flow:
+          1. Validate GitHub URL
+          2. Fetch metadata from GitHub API (synchronous)
+          3. Fetch file tree from GitHub API (synchronous)
+          4. Create repository document with all metadata
+          5. Create background task for file processing only
 
           Args:
               request: RepositoryCreate request model
 
           Returns:
-              Dictionary with repo_id, task_id, and status
+              Dictionary with repo_id, task_id, status, and metadata
           """
           try:
-              print(f"🔵 [1/4] Validating GitHub URL: {request.github_url}")
+              print(f"🔵 [1/5] Validating GitHub URL: {request.github_url}")
               # 1. Validate GitHub URL
               try:
                   owner, repo_name = self.github_service.parse_github_url(request.github_url)
@@ -32,38 +39,85 @@ class RepositoryController:
                   print(f"❌ Invalid URL: {e}")
                   raise HTTPException(status_code=400, detail=str(e))
 
-              print(f"🔵 [2/4] Creating repository document...")
-              # 2. Create repository document
+              print(f"🔵 [2/5] Fetching repository metadata from GitHub...")
+              # 2. Fetch metadata from GitHub API (SYNCHRONOUS)
+              try:
+                  metadata = await self.github_service.get_repository_metadata(owner, repo_name)
+                  print(f"✅ Metadata fetched: {metadata['full_name']} ({metadata['stars']} ⭐)")
+              except Exception as e:
+                  print(f"❌ Failed to fetch metadata: {e}")
+                  raise HTTPException(status_code=404, detail=f"Repository not found or API error: {str(e)}")
+
+              print(f"🔵 [3/5] Fetching file tree from GitHub...")
+              # 3. Fetch file tree from GitHub API (SYNCHRONOUS)
+              try:
+                  file_tree = await self.github_service.get_repository_tree(
+                      owner=owner,
+                      repo_name=repo_name,
+                      branch=metadata["default_branch"]
+                  )
+                  file_count = self._count_files_in_tree(file_tree)
+                  languages_breakdown = self._analyze_languages_in_tree(file_tree)
+                  print(f"✅ File tree fetched: {file_count} files")
+                  print(f"📊 Languages: {languages_breakdown}")
+              except Exception as e:
+                  print(f"⚠️ Failed to fetch file tree: {e}")
+                  file_tree = {}
+                  file_count = 0
+                  languages_breakdown = {}
+
+              print(f"🔵 [4/5] Creating repository document with metadata...")
+              # 4. Create repository document with all metadata
               repo_id = await self.repository_service.create_repository(
                   github_url=request.github_url,
-                  session_id=request.session_id
+                  session_id=request.session_id,
+                  owner=metadata["owner"],
+                  repo_name=metadata["repo_name"],
+                  full_name=metadata["full_name"],
+                  description=metadata.get("description"),
+                  default_branch=metadata["default_branch"],
+                  language=metadata.get("language"),
+                  stars=metadata["stars"],
+                  forks=metadata["forks"],
+                  file_tree=file_tree,
+                  status="fetched",  # Metadata + tree fetched, files not processed yet
+                  languages_breakdown=languages_breakdown,
+                  file_count=file_count
               )
               print(f"✅ Repository created: {repo_id}")
 
-              print(f"🔵 [3/4] Creating background task...")
-              # 3. Create task for background processing
+              print(f"🔵 [5/5] Creating background task for file processing...")
+              # 5. Create task for background processing (files only)
               task_id = await self.task_service.create_task(
-                  task_type="process_repository",
+                  task_type="process_files",
                   payload={
                       "repo_id": repo_id,
                       "session_id": request.session_id,
-                      "owner": owner,
-                      "repo_name": repo_name
+                      "file_count": file_count
                   }
               )
               print(f"✅ Task created: {task_id}")
 
-              print(f"🔵 [4/4] Linking task to repository...")
-              # 4. Link task to repository
+              # Link task to repository
               await self.repository_service.update_task_id(repo_id, task_id)
-              print(f"✅ Task linked successfully")
 
               print(f"🎉 Repository added successfully!")
               return {
                   "repo_id": repo_id,
                   "task_id": task_id,
-                  "status": "queued",
-                  "message": "Repository added successfully. Processing will begin shortly."
+                  "status": "fetched",
+                  "message": "Repository metadata fetched. File processing will begin in background.",
+                  "metadata": {
+                      "owner": metadata["owner"],
+                      "repo_name": metadata["repo_name"],
+                      "full_name": metadata["full_name"],
+                      "description": metadata.get("description"),
+                      "stars": metadata["stars"],
+                      "forks": metadata["forks"],
+                      "language": metadata.get("language"),
+                      "file_count": file_count,
+                      "languages_breakdown": languages_breakdown
+                  }
               }
 
           except HTTPException:
@@ -71,6 +125,44 @@ class RepositoryController:
           except Exception as e:
               print(f"❌ Error in add_repository: {str(e)}")
               raise HTTPException(status_code=500, detail=f"Failed to add repository: {str(e)}")
+
+    def _count_files_in_tree(self, tree: dict) -> int:
+        """Recursively count files in tree structure."""
+        count = 0
+        for key, value in tree.items():
+            if isinstance(value, dict):
+                if value.get("type") == "file":
+                    count += 1
+                elif value.get("type") == "folder":
+                    count += self._count_files_in_tree(value.get("children", {}))
+        return count
+
+    def _analyze_languages_in_tree(self, tree: dict) -> dict:
+        """
+        Recursively analyze file tree and count files by language.
+
+        Returns:
+            Dictionary with language names as keys and file counts as values
+            Example: {"TypeScript": 45, "JavaScript": 12, "JSON": 3}
+        """
+        languages = {}
+
+        def traverse(node: dict, filename: str = ""):
+            for key, value in node.items():
+                if isinstance(value, dict):
+                    if value.get("type") == "file":
+                        # Detect language from filename
+                        language = self.github_service.detect_language(key)
+                        if language:
+                            # Capitalize first letter for consistency
+                            language = language.capitalize()
+                            languages[language] = languages.get(language, 0) + 1
+                    elif value.get("type") == "folder":
+                        # Recursively traverse folder
+                        traverse(value.get("children", {}), key)
+
+        traverse(tree)
+        return languages
         
     async def get_repository(self, repo_id: str) -> RepositoryResponse:
           """
