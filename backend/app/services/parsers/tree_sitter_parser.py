@@ -205,7 +205,10 @@ class TreeSitterParser(BaseParser):
             file_path: File path (for detecting language)
 
         Returns:
-            Dictionary with functions, classes, and imports
+            Dictionary with:
+            - functions: Flat list of ALL functions (standalone + methods) with parent_class
+            - classes: Nested structure with methods inside
+            - imports: List of import statements
         """
         # Detect language from file extension
         language = self._detect_language(file_path)
@@ -227,9 +230,13 @@ class TreeSitterParser(BaseParser):
             tree = parser.parse(bytes(code, "utf8"))
             root_node = tree.root_node
 
-            # Extract functions, classes, imports
-            functions = self._extract_functions_ts(root_node, code, language)
+            # Extract classes first (with nested methods)
             classes = self._extract_classes_ts(root_node, code, language)
+
+            # Extract ALL functions (flat list with parent_class)
+            functions = self._extract_functions_ts(root_node, code, language, classes)
+
+            # Extract imports
             imports = self._extract_imports_ts(root_node, code, language)
 
             return {
@@ -272,17 +279,27 @@ class TreeSitterParser(BaseParser):
             return 'php'
         return None
 
-    def _extract_functions_ts(self, root_node, code: str, language: str) -> List[Dict]:
-        """Extract functions using tree-sitter"""
+    def _extract_functions_ts(self, root_node, code: str, language: str, classes: List[Dict]) -> List[Dict]:
+        """
+        Extract ALL functions using tree-sitter (FLAT list including methods).
+
+        Creates a searchable flat list with parent_class links.
+        """
         functions = []
 
-        # Simple traversal (without query API for now)
-        self._traverse_functions(root_node, code, language, functions)
+        # Create a mapping of line ranges to class names for quick lookup
+        class_ranges = {}
+        for cls in classes:
+            for line in range(cls['line_start'], cls['line_end'] + 1):
+                class_ranges[line] = cls['name']
+
+        # Traverse tree to find all functions
+        self._traverse_functions(root_node, code, language, functions, class_ranges)
 
         return functions
 
-    def _traverse_functions(self, node, code: str, language: str, functions: List):
-        """Recursively traverse tree to find functions"""
+    def _traverse_functions(self, node, code: str, language: str, functions: List, class_ranges: Dict):
+        """Recursively traverse tree to find ALL functions (standalone + methods)"""
         # Function node types by language
         function_types = {
             'javascript': ['function_declaration', 'method_definition', 'arrow_function'],
@@ -296,27 +313,42 @@ class TreeSitterParser(BaseParser):
         }
 
         if node.type in function_types.get(language, []):
+            line_start = node.start_point[0] + 1
+
+            # Determine if this function is inside a class
+            parent_class = class_ranges.get(line_start)
+            is_method = parent_class is not None
+
+            func_name = self._extract_node_name(node, code)
+            params = self._extract_method_params(node, code, language)
+
+            # Generate signature
+            signature = f"{func_name}({', '.join(params)})"
+
             func_info = {
-                "name": self._extract_node_name(node, code),
-                "line_start": node.start_point[0] + 1,
+                "name": func_name,
+                "line_start": line_start,
                 "line_end": node.end_point[0] + 1,
-                "parameters": [],
-                "docstring": None
+                "parameters": params,
+                "parent_class": parent_class,  # ✅ Link to parent class
+                "is_method": is_method,        # ✅ Flag if method
+                "docstring": None,
+                "signature": signature          # ✅ Full signature
             }
             functions.append(func_info)
 
         # Recurse into children
         for child in node.children:
-            self._traverse_functions(child, code, language, functions)
+            self._traverse_functions(child, code, language, functions, class_ranges)
 
     def _extract_classes_ts(self, root_node, code: str, language: str) -> List[Dict]:
-        """Extract classes using tree-sitter"""
+        """Extract classes using tree-sitter with nested methods"""
         classes = []
         self._traverse_classes(root_node, code, language, classes)
         return classes
 
     def _traverse_classes(self, node, code: str, language: str, classes: List):
-        """Recursively traverse tree to find classes"""
+        """Recursively traverse tree to find classes and extract nested methods"""
         class_types = {
             'javascript': ['class_declaration'],
             'typescript': ['class_declaration', 'interface_declaration'],
@@ -328,12 +360,40 @@ class TreeSitterParser(BaseParser):
             'php': ['class_declaration', 'interface_declaration']
         }
 
+        # Method node types by language
+        method_types = {
+            'javascript': ['method_definition'],
+            'typescript': ['method_definition', 'method_signature'],
+            'go': ['method_declaration'],
+            'java': ['method_declaration', 'constructor_declaration'],
+            'rust': ['function_item'],  # Methods inside impl blocks
+            'cpp': ['function_definition'],
+            'c': [],  # C doesn't have methods
+            'php': ['method_declaration']
+        }
+
         if node.type in class_types.get(language, []):
+            # Extract methods NESTED inside this class
+            methods = []
+            for child in node.children:
+                # Look for class body
+                if child.type in ['class_body', 'declaration_list', 'field_declaration_list']:
+                    for method_node in child.children:
+                        if method_node.type in method_types.get(language, []):
+                            method_info = {
+                                "name": self._extract_node_name(method_node, code),
+                                "line_start": method_node.start_point[0] + 1,
+                                "line_end": method_node.end_point[0] + 1,
+                                "parameters": self._extract_method_params(method_node, code, language),
+                                "docstring": None
+                            }
+                            methods.append(method_info)
+
             class_info = {
                 "name": self._extract_node_name(node, code),
                 "line_start": node.start_point[0] + 1,
                 "line_end": node.end_point[0] + 1,
-                "methods": [],
+                "methods": methods,  # ✅ NESTED methods with full details
                 "docstring": None
             }
             classes.append(class_info)
@@ -374,3 +434,39 @@ class TreeSitterParser(BaseParser):
             if 'identifier' in child.type or child.type == 'name':
                 return code[child.start_byte:child.end_byte]
         return "anonymous"
+
+    def _extract_method_params(self, node, code: str, language: str) -> List[str]:
+        """
+        Extract parameter names from a function/method node.
+
+        This is a simplified extraction - just gets parameter count for now.
+        Full parameter name extraction would require language-specific logic.
+        """
+        params = []
+
+        # Parameter list node types by language
+        param_list_types = {
+            'javascript': ['formal_parameters'],
+            'typescript': ['formal_parameters'],
+            'go': ['parameter_list'],
+            'java': ['formal_parameters'],
+            'rust': ['parameters'],
+            'cpp': ['parameter_list'],
+            'c': ['parameter_list'],
+            'php': ['formal_parameters']
+        }
+
+        param_types = param_list_types.get(language, [])
+
+        for child in node.children:
+            if child.type in param_types:
+                # Extract parameter names from the parameter list
+                for param_node in child.children:
+                    if 'identifier' in param_node.type or param_node.type in ['required_parameter', 'optional_parameter']:
+                        param_text = code[param_node.start_byte:param_node.end_byte]
+                        # Clean up parameter text (remove types, defaults, etc.)
+                        param_name = param_text.split(':')[0].split('=')[0].strip()
+                        if param_name and param_name not in [',', '(', ')', '{', '}']:
+                            params.append(param_name)
+
+        return params

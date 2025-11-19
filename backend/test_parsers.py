@@ -325,20 +325,32 @@ def run_tests():
 
         # Display results
         print(f"\n📊 Parsing Results:")
-        print(f"   Functions found: {len(result['functions'])}")
-        print(f"   Classes found:   {len(result['classes'])}")
+        print(f"   Functions found: {len(result['functions'])} (flat list: standalone + methods)")
+        print(f"   Classes found:   {len(result['classes'])} (with nested methods)")
         print(f"   Imports found:   {len(result['imports'])}")
 
-        # Show details
+        # Show details - Functions (flat list)
         if result['functions']:
-            print(f"\n   📝 Functions:")
-            for func in result['functions']:
-                print(f"      - {func['name']} (lines {func['line_start']}-{func['line_end']})")
+            print(f"\n   📝 Functions (flat list with parent_class):")
+            for func in result['functions'][:10]:  # Show first 10
+                parent = func.get('parent_class')
+                if parent:
+                    print(f"      - {func['name']} (method of {parent}, lines {func['line_start']}-{func['line_end']})")
+                else:
+                    print(f"      - {func['name']} (standalone, lines {func['line_start']}-{func['line_end']})")
+            if len(result['functions']) > 10:
+                print(f"      ... and {len(result['functions']) - 10} more")
 
+        # Show details - Classes (nested structure)
         if result['classes']:
-            print(f"\n   📦 Classes:")
+            print(f"\n   📦 Classes (with nested methods):")
             for cls in result['classes']:
                 print(f"      - {cls['name']} (lines {cls['line_start']}-{cls['line_end']})")
+                if cls.get('methods'):
+                    for method in cls['methods'][:5]:  # Show first 5 methods
+                        print(f"         └─ {method['name']}()")
+                    if len(cls['methods']) > 5:
+                        print(f"         └─ ... and {len(cls['methods']) - 5} more methods")
 
         if result['imports']:
             print(f"\n   📥 Imports:")
@@ -365,11 +377,51 @@ def run_tests():
             print(f"\n⚠️  WARNING: Expected imports but got none")
             success = False
 
+        # ✅ NEW: Validate structure (nested + flat)
+        print(f"\n🔍 Validating structure:")
+
+        # Check functions have required fields
+        if result['functions']:
+            func_sample = result['functions'][0]
+            if 'parent_class' in func_sample and 'is_method' in func_sample and 'signature' in func_sample:
+                print(f"   ✅ Functions have parent_class, is_method, and signature fields")
+            else:
+                print(f"   ⚠️  Functions missing required fields (parent_class, is_method, signature)")
+                success = False
+
+        # Check classes have nested methods
+        if result['classes']:
+            cls_sample = result['classes'][0]
+            if 'methods' in cls_sample and isinstance(cls_sample['methods'], list):
+                print(f"   ✅ Classes have nested methods array")
+
+                # If class has methods, verify they have full details
+                if cls_sample['methods']:
+                    method_sample = cls_sample['methods'][0]
+                    if 'name' in method_sample and 'line_start' in method_sample and 'parameters' in method_sample:
+                        print(f"   ✅ Methods have full details (name, line_start, parameters)")
+                    else:
+                        print(f"   ⚠️  Methods missing required fields")
+                        success = False
+            else:
+                print(f"   ⚠️  Classes missing methods array")
+                success = False
+
+        # Check relationship: methods should appear in both places
+        if result['classes'] and result['functions']:
+            total_methods_in_classes = sum(len(cls.get('methods', [])) for cls in result['classes'])
+            methods_in_functions = sum(1 for func in result['functions'] if func.get('is_method'))
+
+            if total_methods_in_classes > 0 and methods_in_functions > 0:
+                print(f"   ✅ Methods found in both structures: {total_methods_in_classes} nested, {methods_in_functions} flat")
+            else:
+                print(f"   ℹ️  No methods found (may be expected for this language)")
+
         if success:
-            print(f"\n✅ PASSED: {language} parser is working!")
+            print(f"\n✅ PASSED: {language} parser is working correctly!")
             results["passed"] += 1
         else:
-            print(f"\n⚠️  PARTIAL: {language} parser works but results differ from expected")
+            print(f"\n⚠️  PARTIAL: {language} parser works but structure validation failed")
             results["passed"] += 1  # Still count as pass if it parsed without error
 
     # Final summary

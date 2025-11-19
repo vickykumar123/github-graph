@@ -19,7 +19,10 @@ class PythonParser(BaseParser):
             code: The Python source code as a string.
             file_path: The path of the file being parsed.
         Returns:
-            A dictionary with lists of functions, classes, and imports.
+            A dictionary with:
+            - functions: Flat list of ALL functions (standalone + methods) with parent_class
+            - classes: Nested structure with methods inside
+            - imports: List of import statements
         """
         try:
             tree = ast.parse(code)
@@ -31,8 +34,14 @@ class PythonParser(BaseParser):
                 "imports": [],
                 "parse_error": str(e)
             }
-        functions = self._extract_functions(tree)
+
+        # Extract classes first (with nested methods)
         classes = self._extract_classes(tree)
+
+        # Extract ALL functions (flat list with parent_class)
+        functions = self._extract_functions(tree, classes)
+
+        # Extract imports
         imports = self._extract_imports(tree)
 
         return {
@@ -42,73 +51,113 @@ class PythonParser(BaseParser):
             "parse_error": None
         }
         
-    def _extract_functions(self, tree: ast.AST) -> List[Dict]:
+    def _extract_functions(self, tree: ast.AST, classes: List[Dict]) -> List[Dict]:
         """
-          Extract all function definitions from AST.
+        Extract ALL function definitions (FLAT list including methods).
 
-          Returns list of function objects with:
-          - name: Function name
-          - line_start: Starting line number
-          - line_end: Ending line number
-          - parameters: List of parameter names
-          - return_type: Return type annotation (if any)
-          - docstring: Function docstring
-          - is_async: Whether function is async
-          """
+        This creates a searchable flat list of ALL functions, with each
+        function knowing which class it belongs to (if any).
+
+        Returns list of function objects with:
+        - name: Function name
+        - line_start: Starting line number
+        - line_end: Ending line number
+        - parameters: List of parameter names
+        - parent_class: Class name if method, None if standalone
+        - is_method: True if inside class, False otherwise
+        - return_type: Return type annotation (if any)
+        - docstring: Function docstring
+        - is_async: Whether function is async
+        - signature: Full function signature
+        """
         functions = []
+
+        # Create a mapping of line ranges to class names for quick lookup
+        class_ranges = {}
+        for cls in classes:
+            for line in range(cls['line_start'], cls['line_end'] + 1):
+                class_ranges[line] = cls['name']
 
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                # Determine if this function is inside a class
+                parent_class = class_ranges.get(node.lineno)
+                is_method = parent_class is not None
+
+                # Generate signature
+                params = self._extract_parameters(node)
+                return_type = self._extract_return_type(node)
+                signature = f"{node.name}({', '.join(params)})"
+                if return_type:
+                    signature += f" -> {return_type}"
+
                 func_info = {
                     "name": node.name,
                     "line_start": node.lineno,
-                    "line_end": node.lineno,
-                    "parameters": self._extract_parameters(node),
-                    "return_type": self._extract_return_type(node),
+                    "line_end": node.end_lineno,
+                    "parameters": params,
+                    "parent_class": parent_class,  # ✅ Link to parent class
+                    "is_method": is_method,        # ✅ Flag if method
+                    "return_type": return_type,
                     "docstring": ast.get_docstring(node),
-                    "is_async": isinstance(node, ast.AsyncFunctionDef)
+                    "is_async": isinstance(node, ast.AsyncFunctionDef),
+                    "signature": signature         # ✅ Full signature
                 }
                 functions.append(func_info)
+
         return functions
     
     def _extract_classes(self, tree: ast.AST) -> List[Dict]:
         """
-          Extract all class definitions from AST.
+        Extract all class definitions from AST with nested methods.
 
-          Returns list of class objects with:
-          - name: Class name
-            - line_start: Starting line number
-            - line_end: Ending line number
-            - docstring: Class docstring
-            - methods: List of method names
-            - base_classes: List of parent classes
+        Returns list of class objects with:
+        - name: Class name
+        - line_start: Starting line number
+        - line_end: Ending line number
+        - docstring: Class docstring
+        - methods: List of method objects (NESTED structure)
+        - base_classes: List of parent classes
         """
         classes = []
         for node in ast.walk(tree):
-              if isinstance(node, ast.ClassDef):
-                  # Extract method names
-                  methods = []
-                  for item in node.body:
-                      if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                          methods.append(item.name)
+            if isinstance(node, ast.ClassDef):
+                # Extract FULL method details (not just names)
+                methods = []
+                for item in node.body:
+                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        method_info = {
+                            "name": item.name,
+                            "line_start": item.lineno,
+                            "line_end": item.end_lineno,
+                            "parameters": self._extract_parameters(item),
+                            "return_type": self._extract_return_type(item),
+                            "docstring": ast.get_docstring(item),
+                            "is_async": isinstance(item, ast.AsyncFunctionDef),
+                            "is_static": self._is_static_method(item),
+                            "is_class_method": self._is_class_method(item),
+                            "is_private": item.name.startswith('_') and not item.name.startswith('__'),
+                            "is_dunder": item.name.startswith('__') and item.name.endswith('__')
+                        }
+                        methods.append(method_info)
 
-                  # Extract base classes (inheritance)
-                  base_classes = []
-                  for base in node.bases:
-                      if isinstance(base, ast.Name):
-                          base_classes.append(base.id)
-                      elif isinstance(base, ast.Attribute):
-                          base_classes.append(self._get_full_name(base))
+                # Extract base classes (inheritance)
+                base_classes = []
+                for base in node.bases:
+                    if isinstance(base, ast.Name):
+                        base_classes.append(base.id)
+                    elif isinstance(base, ast.Attribute):
+                        base_classes.append(self._get_full_name(base))
 
-                  class_info = {
-                      "name": node.name,
-                      "line_start": node.lineno,
-                      "line_end": node.end_lineno,
-                      "methods": methods,
-                      "docstring": ast.get_docstring(node),
-                      "base_classes": base_classes
-                  }
-                  classes.append(class_info)
+                class_info = {
+                    "name": node.name,
+                    "line_start": node.lineno,
+                    "line_end": node.end_lineno,
+                    "docstring": ast.get_docstring(node),
+                    "methods": methods,  # ✅ Full method objects, not just names
+                    "base_classes": base_classes
+                }
+                classes.append(class_info)
 
         return classes
     
@@ -199,3 +248,17 @@ class PythonParser(BaseParser):
               return ast.unparse(node)
           except:
               return "Unknown"
+
+    def _is_static_method(self, node: ast.FunctionDef) -> bool:
+        """Check if function has @staticmethod decorator"""
+        for decorator in node.decorator_list:
+            if isinstance(decorator, ast.Name) and decorator.id == 'staticmethod':
+                return True
+        return False
+
+    def _is_class_method(self, node: ast.FunctionDef) -> bool:
+        """Check if function has @classmethod decorator"""
+        for decorator in node.decorator_list:
+            if isinstance(decorator, ast.Name) and decorator.id == 'classmethod':
+                return True
+        return False

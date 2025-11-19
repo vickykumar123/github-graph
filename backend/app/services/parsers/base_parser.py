@@ -42,8 +42,35 @@ class BaseParser(ABC):
         Returns:
             Dictionary with parsed information:
             {
-                "functions": [...],    # List of function definitions
-                "classes": [...],      # List of class definitions
+                "functions": [         # Flat list: ALL functions (standalone + methods)
+                    {
+                        "name": "function_name",
+                        "line_start": 10,
+                        "line_end": 15,
+                        "parameters": ["param1", "param2"],
+                        "parent_class": "ClassName",  # null if standalone function
+                        "is_method": True,            # True if inside class
+                        "docstring": "Function description",
+                        "signature": "function_name(param1, param2)"
+                    }
+                ],
+                "classes": [           # Nested structure: Classes with methods
+                    {
+                        "name": "ClassName",
+                        "line_start": 5,
+                        "line_end": 20,
+                        "docstring": "Class description",
+                        "methods": [   # Methods nested inside class
+                            {
+                                "name": "method_name",
+                                "line_start": 10,
+                                "line_end": 15,
+                                "parameters": ["self", "param1"],
+                                "docstring": "Method description"
+                            }
+                        ]
+                    }
+                ],
                 "imports": [...],      # List of import statements
                 "parse_error": None    # Error message if parsing failed
             }
