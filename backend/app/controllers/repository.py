@@ -1,10 +1,13 @@
 from fastapi import HTTPException, BackgroundTasks
+from typing import Optional
+import os
 from app.services.github_service import GitHubService
 from app.services.repository_service import RepositoryService
 from app.services.task_service import TaskService
 from app.services.file_processing_service import FileProcessingService
 from app.services.file_service import FileService
 from app.models.schemas import RepositoryCreate, RepositoryResponse, TaskResponse
+from app.config.settings import settings
 
 class RepositoryController:
     """Controller for handling repository-related operations"""
@@ -16,24 +19,49 @@ class RepositoryController:
         self.file_processing_service = FileProcessingService()
         self.file_service = FileService()
 
-    async def add_repository(self, request: RepositoryCreate, background_tasks: BackgroundTasks) -> dict:
+    async def add_repository(
+        self,
+        request: RepositoryCreate,
+        background_tasks: BackgroundTasks,
+        api_key: Optional[str] = None
+    ) -> dict:
           """
           Add a new repository with immediate metadata fetch.
 
           Flow:
+          0. Validate API key (required for AI summaries)
           1. Validate GitHub URL
           2. Fetch metadata from GitHub API (synchronous)
           3. Fetch file tree from GitHub API (synchronous)
           4. Create repository document with all metadata
-          5. Create background task for file processing only
+          5. Create background task for file processing
 
           Args:
               request: RepositoryCreate request model
+              background_tasks: FastAPI background tasks
+              api_key: API key from X-API-Key header (optional in development)
 
           Returns:
               Dictionary with repo_id, task_id, status, and metadata
           """
           try:
+              # 0. Validate API key
+              # Check if API key is available
+              if not api_key:
+                  # Try to get from environment (development only)
+                  if settings.env == "development":
+                      api_key = settings.ai_api_key
+                      if api_key:
+                          print("ℹ️  Using AI_API_KEY from .env (development mode)")
+
+                  # If still no API key, return error
+                  if not api_key:
+                      raise HTTPException(
+                          status_code=400,
+                          detail="API key required. Provide X-API-Key header with your OpenAI/Gemini API key."
+                      )
+
+              print(f"✅ API key validated")
               print(f"🔵 [1/5] Validating GitHub URL: {request.github_url}")
               # 1. Validate GitHub URL
               try:
@@ -110,7 +138,8 @@ class RepositoryController:
                   self.file_processing_service.process_repository_files,
                   repo_id=repo_id,
                   session_id=request.session_id,
-                  task_id=task_id
+                  task_id=task_id,
+                  api_key=api_key
               )
               print(f"🚀 Background file processing started!")
 
@@ -276,9 +305,14 @@ class RepositoryController:
                 "language": file["language"],
                 "size_bytes": file["size_bytes"],
                 "parsed": file.get("parsed", False),
+                "embedded": file.get("embedded", False),
                 "functions_count": len(file.get("functions", [])),
                 "classes_count": len(file.get("classes", [])),
                 "imports_count": len(file.get("imports", [])),
+                "embeddings_count": len(file.get("embeddings", [])),
+                "summary": file.get("summary"),
+                "model": file.get("model"),
+                "provider": file.get("provider"),
                 "dependencies": file.get("dependencies", {
                     "imports": [],
                     "imported_by": [],

@@ -2,8 +2,9 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.config import settings
+from app.config.settings import settings
 from app.database import db
+from app.database.indexes import create_indexes
 from app.routers import session, repository
 
 @asynccontextmanager
@@ -20,6 +21,7 @@ async def lifespan(app: FastAPI):
     print(f"🌐 Server: http://{settings.host}:{settings.port}")
 
     await db.connect_db()
+    await create_indexes()  # Create database indexes for performance
     yield  # Application runs here
 
       # Shutdown (runs when server stops)

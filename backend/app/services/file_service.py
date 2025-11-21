@@ -100,10 +100,22 @@ class FileService:
           return await collection.find_one({"repo_id": repo_id, "path": path})
 
     async def get_files_by_repo(self, repo_id: str, limit: int = 1000) -> List[Dict]:
-          """Get all files for a repository"""
+          """
+          Get all files for a repository.
+
+          Uses projection to exclude heavy fields (content, embedding vectors)
+          for faster queries and reduced network transfer.
+          """
           database = db.get_database()
           collection = database[self.collection_name]
-          cursor = collection.find({"repo_id": repo_id}).limit(limit)
+
+          # Exclude heavy fields - only fetch metadata
+          projection = {
+              "content": 0,  # Exclude full file content (can be 100KB+ per file)
+              "embeddings.embedding": 0  # Exclude 768-dim vectors, keep metadata
+          }
+
+          cursor = collection.find({"repo_id": repo_id}, projection).limit(limit)
           return await cursor.to_list(length=limit)
 
     async def update_parsed_data(
@@ -224,15 +236,26 @@ class FileService:
           database = db.get_database()
           collection = database[self.collection_name]
 
+          # Build update fields
+          update_fields = {
+              "analysis": analysis,
+              "analyzed": True,
+              "updated_at": datetime.now()
+          }
+
+          # Also save summary at root level for easy access
+          if "summary" in analysis:
+              update_fields["summary"] = analysis["summary"]
+
+          # Also save model/provider at root level
+          if "model" in analysis:
+              update_fields["model"] = analysis["model"]
+          if "provider" in analysis:
+              update_fields["provider"] = analysis["provider"]
+
           result = await collection.update_one(
               {"file_id": file_id},
-              {
-                  "$set": {
-                      "analysis": analysis,
-                      "analyzed": True,
-                      "updated_at": datetime.now()
-                  }
-              }
+              {"$set": update_fields}
           )
           return result.modified_count > 0
 

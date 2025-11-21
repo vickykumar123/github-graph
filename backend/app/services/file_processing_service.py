@@ -10,6 +10,8 @@ from app.services.task_service import TaskService
 from app.services.repository_service import RepositoryService
 from app.services.parsers.parser_factory import ParserFactory
 from app.services.dependency_resolver import DependencyResolver
+from app.services.embedding_service import EmbeddingService
+from app.services.ai_service import AIService
 
 class FileProcessingService:
     """
@@ -28,8 +30,9 @@ class FileProcessingService:
         self.task_service = TaskService()
         self.repo_service = RepositoryService()
         self.parser_factory = ParserFactory()
+        # EmbeddingService and AIService will be initialized per-request with API key
 
-    async def process_repository_files(self, repo_id: str, session_id: str, task_id: str):
+    async def process_repository_files(self, repo_id: str, session_id: str, task_id: str, api_key: str):
         """
         Process all files in a repository:
         1. Fetch file list from GitHub
@@ -43,6 +46,10 @@ class FileProcessingService:
         """
         try:
             print(f"\n Starting file processing for repo {repo_id} \n")
+
+            # Initialize AI and Embedding services with provided API key
+            ai_service = AIService(api_key=api_key)
+            embedding_service = EmbeddingService(api_key=api_key)
 
             # step 1: Get repository document
             repo_doc = await self.repo_service.get_repository(repo_id)
@@ -78,11 +85,19 @@ class FileProcessingService:
                 await self.task_service.update_progress(task_id, processed_count, total_files)
                 print(f"\n Updated task {task_id} progress: {processed_count}/{total_files} \n")
 
-            # step 4: Resolve dependencies
-            print(f"\n🔗 Resolving dependencies...")
-            await self._resolve_dependencies(repo_id)
+            # step 4-6: Run all analysis in parallel (dependencies, embeddings, summaries)
+            print(f"\n🚀 Running parallel analysis: dependencies + embeddings + AI summaries...")
+            await asyncio.gather(
+                self._resolve_dependencies(repo_id),
+                self._generate_embeddings(repo_id, embedding_service),
+                self._generate_summaries(repo_id, ai_service)
+            )
 
-            # step 5: Complete task
+            # step 7: Regenerate embeddings for summaries (must run after summaries)
+            print(f"\n🔮 Regenerating embeddings for summaries...")
+            await self._regenerate_summary_embeddings(repo_id, embedding_service)
+
+            # step 8: Complete task
             await self.task_service.complete_task(task_id, result = {"files_processed": processed_count, "total_files": total_files })
             await self.repo_service.update_status(repo_id, "completed")
             print(f"\n Completed file processing for repo {repo_id} \n")
@@ -385,3 +400,59 @@ class FileProcessingService:
           except Exception as e:
               print(f"❌ Error resolving dependencies for repo {repo_id}: {str(e)}")
               raise
+
+    async def _generate_embeddings(self, repo_id: str, embedding_service: EmbeddingService):
+          """
+          Generate embeddings for all parsed files in repository.
+
+          Uses CodeBERT or provider embeddings to create 768-dim embeddings for:
+          - Functions (code + signature)
+          - Classes (name + methods)
+          - File summaries (if available)
+
+          Args:
+              repo_id: Repository ID
+              embedding_service: Initialized EmbeddingService with API key
+          """
+          try:
+              await embedding_service.generate_embeddings_for_repository(repo_id)
+          except Exception as e:
+              print(f"❌ Error generating embeddings for repo {repo_id}: {str(e)}")
+              # Don't raise - embeddings are optional, don't fail the whole pipeline
+              print(f"⚠️  Continuing without embeddings...")
+
+    async def _generate_summaries(self, repo_id: str, ai_service: AIService):
+          """
+          Generate AI summaries for all parsed files in repository.
+
+          Uses LLM (GPT-4o-mini/Gemini) to create comprehensive summaries.
+          Runs automatically in parallel with dependencies and embeddings.
+
+          Args:
+              repo_id: Repository ID
+              ai_service: Initialized AIService with API key
+          """
+          try:
+              await ai_service.generate_summaries_for_repository(repo_id)
+          except Exception as e:
+              print(f"❌ Error generating summaries for repo {repo_id}: {str(e)}")
+              # Don't raise - summaries are optional, don't fail the whole pipeline
+              print(f"⚠️  Continuing without summaries...")
+
+    async def _regenerate_summary_embeddings(self, repo_id: str, embedding_service: EmbeddingService):
+          """
+          Regenerate embeddings for file summaries.
+
+          Runs AFTER summaries are generated.
+          Creates embeddings for semantic search on summaries.
+
+          Args:
+              repo_id: Repository ID
+              embedding_service: Initialized EmbeddingService with API key
+          """
+          try:
+              await embedding_service.regenerate_summary_embeddings(repo_id)
+          except Exception as e:
+              print(f"❌ Error regenerating summary embeddings for repo {repo_id}: {str(e)}")
+              # Don't raise - summary embeddings are optional
+              print(f"⚠️  Continuing without summary embeddings...")
