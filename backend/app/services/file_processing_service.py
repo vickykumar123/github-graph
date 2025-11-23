@@ -12,6 +12,8 @@ from app.services.parsers.parser_factory import ParserFactory
 from app.services.dependency_resolver import DependencyResolver
 from app.services.embedding_service import EmbeddingService
 from app.services.ai_service import AIService
+from app.database import db
+from app.config.settings import settings
 
 class FileProcessingService:
     """
@@ -43,12 +45,43 @@ class FileProcessingService:
             repo_id: Repository ID
             session_id: Session ID
             task_id: Task ID for progress tracking
+            api_key: API key from X-API-Key header
         """
         try:
-            print(f"\n Starting file processing for repo {repo_id} \n")
+            print(f"\n🚀 Starting file processing for repo {repo_id} \n")
 
-            # Initialize AI and Embedding services with provided API key
-            ai_service = AIService(api_key=api_key)
+            # Fetch session to get provider and model preferences
+            database = db.get_database()
+            sessions_collection = database["sessions"]
+            session = await sessions_collection.find_one({"session_id": session_id})
+
+            if not session:
+                print(f"⚠️  Session not found: {session_id}")
+                if settings.env == "development":
+                    provider = settings.ai_provider or "openai"
+                    model = settings.ai_model
+                    print(f"ℹ️  Using .env defaults (development mode): {provider} ({model})")
+                else:
+                    raise ValueError(f"Session not found: {session_id}")
+            else:
+                # Get provider and model from session preferences
+                preferences = session.get("preferences")
+
+                if preferences and preferences.get("ai_provider"):
+                    provider = preferences.get("ai_provider")
+                    model = preferences.get("ai_model")
+                    print(f"ℹ️  Using provider from session: {provider} ({model})")
+                else:
+                    # Fall back to .env only in development
+                    if settings.env == "development":
+                        provider = settings.ai_provider or "openai"
+                        model = settings.ai_model
+                        print(f"ℹ️  Session has no preferences, using .env defaults (development mode): {provider} ({model})")
+                    else:
+                        raise ValueError(f"Session preferences not set. Please configure AI provider and model.")
+
+            # Initialize AI and Embedding services with API key and session preferences
+            ai_service = AIService(api_key=api_key, provider=provider, model=model)
             embedding_service = EmbeddingService(api_key=api_key)
 
             # step 1: Get repository document

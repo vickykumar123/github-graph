@@ -58,18 +58,22 @@ class QueryController:
                 return
 
             # Get provider and model from session preferences
-            # If not in session, fall back to .env
             preferences = session.get("preferences")
 
             if preferences and preferences.get("ai_provider"):
                 provider = preferences.get("ai_provider")
                 model = preferences.get("ai_model")
-                print(f"ℹ️  Using provider from session: {provider}")
+                print(f"ℹ️  Using provider from session: {provider} ({model})")
             else:
-                # Fall back to .env
-                provider = settings.ai_provider or "openai"
-                model = settings.ai_model
-                print(f"ℹ️  Using provider from .env: {provider}")
+                # Fall back to .env only in development
+                if settings.env == "development":
+                    provider = settings.ai_provider or "openai"
+                    model = settings.ai_model
+                    print(f"ℹ️  Session has no preferences, using .env defaults (development mode): {provider} ({model})")
+                else:
+                    error_event = {"type": "error", "error": "Session preferences not set. Please configure AI provider and model."}
+                    yield f"data: {json.dumps(error_event)}\n\n"
+                    return
 
             # In development, fall back to .env API key if not provided
             if not api_key:
