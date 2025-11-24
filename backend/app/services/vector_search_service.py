@@ -11,6 +11,7 @@ Implements 5 tools for code search:
 
 from typing import List, Dict, Optional
 import re
+import asyncio
 
 from app.database import db
 from app.services.file_service import FileService
@@ -73,24 +74,25 @@ class VectorSearchService:
 
             print(f"✅ Query embedded ({len(query_embedding)} dimensions)")
 
-            # 1. Search file summaries (top 2)
-            print(f"\n📄 Searching file summaries (top 2)...")
-            summary_results = await self._vector_search(
-                repo_id=repo_id,
-                query=query,
-                query_embedding=query_embedding,
-                top_k=2,  # Top 2 files
-                search_type="summary"
-            )
-
-            # 2. Search code elements (top 2)
-            print(f"\n🔍 Searching code elements (top 2)...")
-            code_results = await self._vector_search(
-                repo_id=repo_id,
-                query=query,
-                query_embedding=query_embedding,
-                top_k=2,  # Top 2 code elements
-                search_type="code"
+            # 1. Search file summaries and code elements in parallel
+            print(f"\n🔍 Searching file summaries and code elements in parallel...")
+            summary_results, code_results = await asyncio.gather(
+                # Search file summaries (top 2)
+                self._vector_search(
+                    repo_id=repo_id,
+                    query=query,
+                    query_embedding=query_embedding,
+                    top_k=2,  # Top 2 files
+                    search_type="summary"
+                ),
+                # Search code elements (top 2)
+                self._vector_search(
+                    repo_id=repo_id,
+                    query=query,
+                    query_embedding=query_embedding,
+                    top_k=2,  # Top 2 code elements
+                    search_type="code"
+                )
             )
 
             # 3. Merge results: summary + code
@@ -579,15 +581,24 @@ class VectorSearchService:
                     "embedding_index": result.get('embedding_index', 0)
                 }
 
-            # Add reconstruction hint for class chunks (code search only)
-            if search_type == "code" and result.get('embedding', {}).get('type') == 'class_chunk':
-                embedding = result.get('embedding', {})
-                formatted_result['reconstruction_hint'] = (
-                    f"This is chunk {embedding.get('chunk_index')}/{embedding.get('total_chunks')} "
-                    f"of class {embedding.get('parent_class')}. "
-                    f"Full class spans lines {embedding.get('line_start')}-{embedding.get('line_end')} "
-                    f"in {result['path']}."
-                )
+                # Reconstruct full class code for class_chunk results
+                if embedding.get('type') == 'class_chunk':
+                    full_class_code = await self._reconstruct_full_class(
+                        file_id=result['file_id'],
+                        parent_class=embedding.get('parent_class')
+                    )
+
+                    if full_class_code:
+                        # Store both chunk code (what matched) and full class code
+                        formatted_result['chunk_code'] = embedding.get('code')  # The specific chunk that matched
+                        formatted_result['code'] = full_class_code['code']  # Full class code
+                        formatted_result['full_class_line_start'] = full_class_code['line_start']
+                        formatted_result['full_class_line_end'] = full_class_code['line_end']
+                        formatted_result['reconstruction_hint'] = (
+                            f"Matched chunk {embedding.get('chunk_index')}/{embedding.get('total_chunks')} "
+                            f"of class {embedding.get('parent_class')}. "
+                            f"Full class code reconstructed (lines {full_class_code['line_start']}-{full_class_code['line_end']})."
+                        )
 
             formatted_results.append(formatted_result)
 
@@ -634,6 +645,73 @@ class VectorSearchService:
             # If text index doesn't exist or error, return empty scores
             print(f"⚠️  Text search failed (index might not exist yet): {e}")
             return {}
+
+    async def _reconstruct_full_class(
+        self,
+        file_id: str,
+        parent_class: str
+    ) -> Optional[Dict]:
+        """
+        Reconstruct full class code from class chunks.
+
+        When a class_chunk is found in search results, this fetches the
+        complete class definition from the original file.
+
+        Args:
+            file_id: File ID containing the class
+            parent_class: Name of the parent class to reconstruct
+
+        Returns:
+            Dict with 'code', 'line_start', 'line_end' or None if not found
+        """
+        try:
+            database = db.get_database()
+            files_collection = database["files"]
+
+            # Fetch file with content and classes metadata
+            file = await files_collection.find_one(
+                {"file_id": file_id},
+                {"content": 1, "classes": 1}
+            )
+
+            if not file:
+                print(f"⚠️  File not found: {file_id}")
+                return None
+
+            # Find the class in the classes array
+            classes = file.get('classes', [])
+            target_class = None
+
+            for cls in classes:
+                if cls['name'] == parent_class:
+                    target_class = cls
+                    break
+
+            if not target_class:
+                print(f"⚠️  Class {parent_class} not found in file")
+                return None
+
+            # Extract full class code
+            content = file.get('content', '')
+            if not content:
+                print(f"⚠️  No content available for file {file_id}")
+                return None
+
+            full_code = self.embedding_service._extract_code_by_lines(
+                content,
+                target_class['line_start'],
+                target_class['line_end']
+            )
+
+            return {
+                'code': full_code,
+                'line_start': target_class['line_start'],
+                'line_end': target_class['line_end']
+            }
+
+        except Exception as e:
+            print(f"❌ Error reconstructing class {parent_class}: {e}")
+            return None
 
     async def _regex_search_function(
         self,
