@@ -3,16 +3,23 @@
  */
 
 import { useEffect, useState } from "react";
-import { useInitializeSession, getSessionIdFromStorage } from "@/hooks/query/session";
+import { useNavigate } from "react-router-dom";
+import { useInitializeSession, getSessionIdFromStorage, useUpdateSessionPreferences } from "@/hooks/query/session";
+import { useCreateRepository } from "@/hooks/query/repository";
 import { AI_PROVIDERS, getModelsForProvider, getDefaultModel } from "@/utils/providers";
 
 export default function Home() {
+  const navigate = useNavigate();
   const { initSession, isPending } = useInitializeSession();
+  const { updateSessionPreferences } = useUpdateSessionPreferences();
+  const { createRepository, isPending: isCreatingRepo } = useCreateRepository();
+
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [githubUrl, setGithubUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   // Update model when provider changes
   const handleProviderChange = (newProvider: string) => {
@@ -49,13 +56,42 @@ export default function Home() {
   }, []); // Run only once on mount
 
   // Check if submit button should be enabled
-  const canSubmit = githubUrl && apiKey && provider && model;
+  const canSubmit = githubUrl && apiKey && provider && model && sessionId;
+  const isProcessing = isCreatingRepo;
 
   const handleSubmit = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || !sessionId) return;
 
-    console.log("Submitting:", { githubUrl, provider, model, apiKey: "***", sessionId });
-    // TODO: Call repository creation API
+    setError(null);
+
+    try {
+      console.log("🚀 Starting repository submission...");
+
+      // Step 1: Update session preferences with provider/model
+      console.log("1️⃣ Updating session preferences...");
+      await updateSessionPreferences({
+        session_id: sessionId,
+        ai_provider: provider,
+        ai_model: model,
+        theme: "dark",
+      });
+
+      // Step 2: Create repository with API key
+      console.log("2️⃣ Creating repository...");
+      const response = await createRepository({
+        github_url: githubUrl,
+        session_id: sessionId,
+        api_key: apiKey,
+      });
+
+      console.log("✅ Repository created successfully:", response);
+
+      // Step 3: Navigate to Explorer page
+      navigate(`/explorer/${response.repo_id}`);
+    } catch (err) {
+      console.error("❌ Failed to create repository:", err);
+      setError(err instanceof Error ? err.message : "Failed to create repository");
+    }
   };
 
   return (
@@ -173,17 +209,33 @@ export default function Home() {
                 />
               </div>
 
+              {/* Error Message */}
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
               {/* Submit Button */}
               <button
                 onClick={handleSubmit}
-                disabled={!canSubmit}
+                disabled={!canSubmit || isProcessing}
                 className={`w-full py-3 px-6 rounded-lg font-medium transition-all ${
-                  canSubmit
+                  canSubmit && !isProcessing
                     ? "bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white"
                     : "bg-gray-700 text-gray-500 cursor-not-allowed"
                 }`}
               >
-                {canSubmit ? "Analyze Repository" : "Fill all fields to continue"}
+                {isProcessing ? (
+                  <span className="flex items-center justify-center space-x-2">
+                    <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div>
+                    <span>Processing...</span>
+                  </span>
+                ) : canSubmit ? (
+                  "Analyze Repository"
+                ) : (
+                  "Fill all fields to continue"
+                )}
               </button>
             </div>
           </div>

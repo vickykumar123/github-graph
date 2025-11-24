@@ -107,3 +107,44 @@ export function useInitializeSession() {
 
   return { initSession, isPending, isSuccess };
 }
+
+// ==================== useUpdateSessionPreferences ====================
+
+interface UpdatePreferencesRequest {
+  session_id: string;
+  ai_provider: string;
+  ai_model: string;
+  embedding_provider?: string | null;
+  embedding_model?: string | null;
+  theme?: string;
+}
+
+export function useUpdateSessionPreferences() {
+  const updatePreferences = async (
+    request: UpdatePreferencesRequest
+  ): Promise<Session> => {
+    const { session_id, ...preferences } = request;
+
+    return apiFetch(`/api/sessions/${session_id}/preferences`, {
+      method: "PATCH",
+      body: JSON.stringify(preferences),
+    });
+  };
+
+  const {
+    mutateAsync: updateSessionPreferences,
+    isPending,
+    isError,
+    error,
+  } = useMutation({
+    mutationFn: updatePreferences,
+    onSuccess: (session) => {
+      console.log("✅ Session preferences updated:", session.preferences);
+    },
+    onError: (error) => {
+      console.error("❌ Failed to update preferences:", error);
+    },
+  });
+
+  return { updateSessionPreferences, isPending, isError, error };
+}

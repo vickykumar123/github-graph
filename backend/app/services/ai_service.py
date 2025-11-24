@@ -18,6 +18,7 @@ from app.config.providers import ProviderConfig
 from app.config.settings import settings
 from app.services.file_service import FileService
 from app.services.embedding_service import EmbeddingService
+from app.utils.text_utils import strip_thinking_content
 
 
 class AIService:
@@ -234,7 +235,9 @@ Be specific about what each function does."""
                 print(f"  ⚠️  {path}: Empty response from AI provider")
                 return False
 
-            summary = response.choices[0].message.content.strip()
+            # Extract and clean summary (remove thinking tags)
+            raw_content = response.choices[0].message.content.strip()
+            summary = strip_thinking_content(raw_content)
 
             # Save summary to database
             await self.file_service.update_summary(file_id, summary)
