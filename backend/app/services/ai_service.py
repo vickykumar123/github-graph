@@ -445,7 +445,8 @@ Write in clear, professional language. Focus on helping new developers understan
                 print(f"  ⚠️  Empty response from AI provider")
                 return None
 
-            overview = response.choices[0].message.content.strip()
+            # Strip thinking tags and clean up response
+            overview = strip_thinking_content(response.choices[0].message.content.strip())
 
             print(f"✅ Repository overview generated ({len(overview)} chars)")
             return overview

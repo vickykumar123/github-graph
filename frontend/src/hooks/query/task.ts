@@ -10,7 +10,7 @@ import { apiFetch } from "@/services/api";
 export interface TaskProgress {
   total_files?: number;
   processed_files?: number;
-  current_step?: string; // "queued" | "fetching" | "parsing" | "embedding"
+  current_step?: string; // "queued" | "fetching" | "parsing" | "embedding" | "summarizing" | "overview" | "finalizing" | "completed"
 }
 
 export interface TaskStatus {

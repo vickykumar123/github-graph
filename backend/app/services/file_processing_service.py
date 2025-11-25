@@ -14,6 +14,7 @@ from app.services.embedding_service import EmbeddingService
 from app.services.ai_service import AIService
 from app.database import db
 from app.config.settings import settings
+from app.models.task_steps import TaskStep
 
 class FileProcessingService:
     """
@@ -117,8 +118,8 @@ class FileProcessingService:
                 await self.repo_service.update_status(repo_id, "completed")
                 return
             
-            # update task with total files
-            await self.task_service.update_progress(task_id, 0, total_files)
+            # Update task with total files and set to PARSING step
+            await self.task_service.update_progress(task_id, 0, total_files, step=TaskStep.PARSING.value)
             await self.repo_service.update_status(repo_id, "processing")
 
             # step 3: Process each file
@@ -131,10 +132,11 @@ class FileProcessingService:
 
                 await self._process_batch(batch, repo_id, session_id, repo_doc["owner"],repo_doc["repo_name"], repo_doc["default_branch"] )
                 processed_count += len(batch)
-                await self.task_service.update_progress(task_id, processed_count, total_files)
+                await self.task_service.update_progress(task_id, processed_count, total_files, step=TaskStep.PARSING.value)
                 print(f"\n Updated task {task_id} progress: {processed_count}/{total_files} \n")
 
             # step 4-6: Run all analysis in parallel (dependencies, embeddings, summaries)
+            await self.task_service.update_step(task_id, TaskStep.EMBEDDING.value)
             print(f"\n🚀 Running parallel analysis: dependencies + embeddings + AI summaries...")
             await asyncio.gather(
                 self._resolve_dependencies(repo_id),
@@ -143,13 +145,15 @@ class FileProcessingService:
             )
 
             # step 7-8: Regenerate summary embeddings + generate repo overview (parallel)
+            await self.task_service.update_step(task_id, TaskStep.OVERVIEW.value)
             print(f"\n🚀 Running parallel post-processing: summary embeddings + repository overview...")
             await asyncio.gather(
                 self._regenerate_summary_embeddings(repo_id, embedding_service),
                 self._generate_repository_overview(repo_id, ai_service)
             )
 
-            # step 9: Complete task
+            # step 9: Finalize and complete task
+            await self.task_service.update_step(task_id, TaskStep.FINALIZING.value)
             await self.task_service.complete_task(task_id, result = {"files_processed": processed_count, "total_files": total_files })
             await self.repo_service.update_status(repo_id, "completed")
             print(f"\n Completed file processing for repo {repo_id} \n")

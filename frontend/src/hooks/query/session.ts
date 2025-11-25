@@ -77,7 +77,10 @@ export function useInitializeSession() {
         console.log("✅ Session loaded successfully");
         return session;
       } catch (error) {
-        console.warn("⚠️ Session not found or invalid, creating new one");
+        console.warn(
+          "⚠️ Session not found or invalid, creating new one ",
+          error
+        );
         clearSessionFromStorage();
       }
     }

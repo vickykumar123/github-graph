@@ -22,21 +22,61 @@ export default function ProgressUI({task, repositoryName}: ProgressUIProps) {
   }
 
   const {progress, status} = task;
-  const progressPercentage =
-    (progress?.total_files ?? 0) > 0
-      ? Math.round(((progress?.processed_files ?? 0) / (progress?.total_files ?? 1)) * 100)
-      : 0;
 
-  // Map step names to user-friendly labels
+  // Map step names to user-friendly labels (matches backend TaskStep enum)
   const stepLabels: Record<string, string> = {
     queued: "Queued",
     fetching: "Fetching files from GitHub",
     parsing: "Parsing code structure",
     embedding: "Generating embeddings",
+    summarizing: "Generating AI summaries",
+    overview: "Generating repository overview",
+    finalizing: "Finalizing analysis",
+    completed: "Completed",
   };
 
   const currentStep = progress?.current_step ?? "queued";
   const currentStepLabel = stepLabels[currentStep] || currentStep;
+
+  // Calculate overall progress based on current step + file progress
+  const calculateProgressPercentage = (): number => {
+    const fileProgress =
+      (progress?.total_files ?? 0) > 0
+        ? ((progress?.processed_files ?? 0) / (progress?.total_files ?? 1)) * 100
+        : 0;
+
+    // Progress ranges for each step:
+    // QUEUED: 0%
+    // PARSING: 0-60% (based on file progress)
+    // EMBEDDING: 60-80%
+    // OVERVIEW: 80-95%
+    // FINALIZING: 95-98%
+    // COMPLETED: 100%
+
+    switch (currentStep) {
+      case "queued":
+        return 0;
+      case "fetching":
+        return 5;
+      case "parsing":
+        // File parsing: 5% to 60%
+        return Math.round(5 + (fileProgress * 0.55));
+      case "embedding":
+        return 70;
+      case "summarizing":
+        return 75;
+      case "overview":
+        return 85;
+      case "finalizing":
+        return 95;
+      case "completed":
+        return 100;
+      default:
+        return 0;
+    }
+  };
+
+  const progressPercentage = calculateProgressPercentage();
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-[var(--bg-primary)] px-4">
@@ -89,26 +129,31 @@ export default function ProgressUI({task, repositoryName}: ProgressUIProps) {
           </div>
 
           {/* Step Details */}
-          <div className="grid grid-cols-4 gap-4 pt-4">
-            <StepIndicator
-              label="Fetching"
-              active={currentStep === "fetching"}
-              completed={["parsing", "embedding"].includes(currentStep)}
-            />
+          <div className="grid grid-cols-5 gap-3 pt-4">
             <StepIndicator
               label="Parsing"
               active={currentStep === "parsing"}
-              completed={currentStep === "embedding"}
+              completed={["embedding", "summarizing", "overview", "finalizing", "completed"].includes(currentStep)}
             />
             <StepIndicator
               label="Embedding"
-              active={currentStep === "embedding"}
-              completed={false}
+              active={currentStep === "embedding" || currentStep === "summarizing"}
+              completed={["overview", "finalizing", "completed"].includes(currentStep)}
+            />
+            <StepIndicator
+              label="Overview"
+              active={currentStep === "overview"}
+              completed={["finalizing", "completed"].includes(currentStep)}
+            />
+            <StepIndicator
+              label="Finalizing"
+              active={currentStep === "finalizing"}
+              completed={currentStep === "completed"}
             />
             <StepIndicator
               label="Complete"
               active={false}
-              completed={status === "completed"}
+              completed={currentStep === "completed"}
             />
           </div>
 
