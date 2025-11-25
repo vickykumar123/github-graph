@@ -87,18 +87,22 @@ interface TreeNodeProps {
   depth: number;
   onFileSelect: (path: string) => void;
   selectedPath: string | null;
+  disabled?: boolean; // When true, folders can expand but files can't be clicked
 }
 
-function TreeNode({ name, node, depth, onFileSelect, selectedPath }: TreeNodeProps) {
+function TreeNode({ name, node, depth, onFileSelect, selectedPath, disabled }: TreeNodeProps) {
   const [isExpanded, setIsExpanded] = useState(false); // All collapsed initially
   const isFolder = node.type === "folder";
   const isSelected = node.path === selectedPath;
+  const isFileDisabled = !isFolder && disabled;
 
   // Handle click
   const handleClick = () => {
     if (isFolder) {
+      // Folders can always expand/collapse
       setIsExpanded(!isExpanded);
-    } else if (node.path) {
+    } else if (node.path && !disabled) {
+      // Files only clickable when not disabled
       onFileSelect(node.path);
     }
   };
@@ -121,8 +125,11 @@ function TreeNode({ name, node, depth, onFileSelect, selectedPath }: TreeNodePro
       <div
         onClick={handleClick}
         className={`
-          flex items-center gap-1 py-1 px-2 cursor-pointer rounded
-          hover:bg-[var(--bg-hover)]
+          flex items-center gap-1 py-1 px-2 rounded
+          ${isFileDisabled
+            ? "opacity-50 cursor-not-allowed"
+            : "cursor-pointer hover:bg-[var(--bg-hover)]"
+          }
           ${isSelected ? "bg-[var(--bg-selected)] text-[var(--text-primary)]" : ""}
         `}
         style={{ paddingLeft: `${depth * 16 + 4}px` }}
@@ -152,6 +159,7 @@ function TreeNode({ name, node, depth, onFileSelect, selectedPath }: TreeNodePro
               depth={depth + 1}
               onFileSelect={onFileSelect}
               selectedPath={selectedPath}
+              disabled={disabled}
             />
           ))}
         </div>
@@ -166,9 +174,10 @@ interface FileTreeProps {
   tree: FileTreeNodeType | null | undefined;
   onFileSelect: (path: string) => void;
   selectedPath: string | null;
+  disabled?: boolean; // When true, folders can expand but files can't be clicked
 }
 
-export default function FileTree({ tree, onFileSelect, selectedPath }: FileTreeProps) {
+export default function FileTree({ tree, onFileSelect, selectedPath, disabled }: FileTreeProps) {
   // Handle empty/null tree
   if (!tree || Object.keys(tree).length === 0) {
     return (
@@ -205,6 +214,7 @@ export default function FileTree({ tree, onFileSelect, selectedPath }: FileTreeP
           depth={0}
           onFileSelect={onFileSelect}
           selectedPath={selectedPath}
+          disabled={disabled}
         />
       ))}
     </div>
