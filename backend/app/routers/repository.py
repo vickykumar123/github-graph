@@ -38,6 +38,31 @@ async def get_repository_files(repo_id: str, limit: int = 50):
     """Get files for a repository with dependency information"""
     return await controller.get_files(repo_id, limit)
 
+@router.get("/{repo_id}/file", response_model=dict)
+async def get_file_by_path(repo_id: str, path: str):
+    """
+    Get file details by repository ID and file path.
+
+    **Query Parameters:**
+    - path: File path in repository (e.g., "src/main.py")
+
+    **Response:**
+    ```json
+    {
+      "file_id": "file-xxx",
+      "path": "src/main.py",
+      "filename": "main.py",
+      "language": "python",
+      "content": "...",
+      "summary": "AI-generated summary...",
+      "functions": [...],
+      "classes": [...],
+      "imports": [...]
+    }
+    ```
+    """
+    return await controller.get_file_by_path(repo_id, path)
+
 @router.get("/{repo_id}/dependency-graph", response_model=dict)
 async def get_dependency_graph(repo_id: str):
     """

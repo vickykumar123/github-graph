@@ -335,6 +335,47 @@ class RepositoryController:
             "files": formatted_files
         }
 
+    async def get_file_by_path(self, repo_id: str, path: str) -> dict:
+        """
+        Get file details by repository ID and file path.
+
+        Args:
+            repo_id: Repository ID
+            path: File path in repository (e.g., "src/main.py")
+
+        Returns:
+            File details including content and summary
+        """
+        file_doc = await self.file_service.get_file_by_path(repo_id, path)
+
+        if not file_doc:
+            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
+        # Return file details (excluding embeddings to reduce payload size)
+        return {
+            "file_id": file_doc["file_id"],
+            "repo_id": file_doc["repo_id"],
+            "path": file_doc["path"],
+            "filename": file_doc["filename"],
+            "language": file_doc["language"],
+            "extension": file_doc.get("extension", ""),
+            "size_bytes": file_doc["size_bytes"],
+            "content": file_doc.get("content", ""),
+            "summary": file_doc.get("summary"),
+            "functions": file_doc.get("functions", []),
+            "classes": file_doc.get("classes", []),
+            "imports": file_doc.get("imports", []),
+            "dependencies": file_doc.get("dependencies", {
+                "imports": [],
+                "imported_by": [],
+                "external_imports": []
+            }),
+            "parsed": file_doc.get("parsed", False),
+            "analyzed": file_doc.get("analyzed", False),
+            "created_at": file_doc.get("created_at"),
+            "updated_at": file_doc.get("updated_at")
+        }
+
     async def get_dependency_graph(self, repo_id: str) -> dict:
         """
         Get dependency graph data for D3.js visualization.

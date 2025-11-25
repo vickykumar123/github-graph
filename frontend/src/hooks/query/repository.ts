@@ -145,3 +145,76 @@ export function useGetTaskStatus() {
 
   return { fetchTaskStatus, isPending };
 }
+
+// ==================== Get File By Path ====================
+
+export interface FileDetails {
+  file_id: string;
+  repo_id: string;
+  path: string;
+  filename: string;
+  language: string;
+  extension: string;
+  size_bytes: number;
+  content: string;
+  summary: string | null;
+  functions: Array<{
+    name: string;
+    signature: string;
+    line_start: number;
+    parameters: string[];
+  }>;
+  classes: Array<{
+    name: string;
+    methods: string[];
+  }>;
+  imports: string[];
+  dependencies: {
+    imports: string[];
+    imported_by: string[];
+    external_imports: string[];
+  };
+  parsed: boolean;
+  analyzed: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Hook to fetch file details by repository ID and file path.
+ *
+ * @param repoId - Repository ID
+ * @param filePath - File path in repository (e.g., "src/main.py")
+ */
+export function useGetFile(repoId: string | undefined, filePath: string | null) {
+  const getFile = async (): Promise<FileDetails> => {
+    if (!repoId || !filePath) {
+      throw new Error("Repository ID and file path are required");
+    }
+
+    return apiFetch(`/api/repositories/${repoId}/file?path=${encodeURIComponent(filePath)}`, {
+      method: "GET",
+    });
+  };
+
+  const {
+    data: file,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ["file", repoId, filePath],
+    queryFn: getFile,
+    enabled: !!repoId && !!filePath, // Only fetch if both exist
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes (file content rarely changes)
+  });
+
+  return {
+    file,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  };
+}

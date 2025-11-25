@@ -5,7 +5,7 @@
 
 import {useParams} from "react-router-dom";
 import {useEffect, useState, useRef} from "react";
-import {useGetRepository} from "@/hooks/query/repository";
+import {useGetRepository, useGetFile} from "@/hooks/query/repository";
 import {useTaskPolling} from "@/hooks/query/task";
 import {FileTree} from "@/components/file-tree";
 
@@ -113,6 +113,13 @@ export default function Explorer() {
     taskId: repository?.task_id,
     enabled: isProcessing, // Only poll when status is "processing"
   });
+
+  // Step 2.5: Fetch file details when a file is selected
+  const {
+    file,
+    isLoading: isFileLoading,
+    isError: isFileError,
+  } = useGetFile(repoId, selectedFilePath);
 
   // Step 3: Refetch repository when task completes
   useEffect(() => {
@@ -329,17 +336,39 @@ export default function Explorer() {
                 <div className="flex-1 p-6 overflow-auto">
                   {selectedFilePath ? (
                     <>
-                      <h2 className="text-xl font-semibold mb-4 font-mono">
-                        {selectedFilePath}
-                      </h2>
-                      <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg p-4">
-                        <p className="text-[var(--text-secondary)]">
-                          Code viewer coming soon...
-                        </p>
-                        <p className="text-sm text-[var(--text-muted)] mt-2">
-                          Selected: {selectedFilePath}
-                        </p>
+                      {/* File Header */}
+                      <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl font-semibold font-mono">
+                          {file?.filename || selectedFilePath}
+                        </h2>
+                        {file && (
+                          <span className="text-sm text-[var(--text-muted)]">
+                            {file.language} • {(file.size_bytes / 1024).toFixed(1)} KB
+                          </span>
+                        )}
                       </div>
+
+                      {/* Code Content */}
+                      {isFileLoading ? (
+                        <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg p-4">
+                          <div className="flex items-center gap-2">
+                            <div className="animate-spin h-4 w-4 border-2 border-purple-500 border-t-transparent rounded-full"></div>
+                            <span className="text-[var(--text-secondary)]">Loading file...</span>
+                          </div>
+                        </div>
+                      ) : isFileError ? (
+                        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+                          <p className="text-red-400">Failed to load file content</p>
+                        </div>
+                      ) : file?.content ? (
+                        <pre className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg p-4 overflow-auto text-sm font-mono whitespace-pre-wrap">
+                          {file.content}
+                        </pre>
+                      ) : (
+                        <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg p-4">
+                          <p className="text-[var(--text-secondary)]">No content available</p>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <>
@@ -348,8 +377,7 @@ export default function Explorer() {
                       </h2>
                       <div className="bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg p-4">
                         <p className="text-[var(--text-secondary)]">
-                          Select a file from the tree to view its contents with
-                          syntax highlighting
+                          Select a file from the tree to view its contents
                         </p>
                       </div>
                     </>
@@ -360,9 +388,20 @@ export default function Explorer() {
                 <div className="h-64 border-t border-[var(--border-color)] bg-[var(--bg-secondary)] p-6 overflow-auto">
                   <h3 className="text-lg font-semibold mb-3">AI Summary</h3>
                   {selectedFilePath ? (
-                    <p className="text-sm text-[var(--text-secondary)]">
-                      Loading summary for {selectedFilePath}...
-                    </p>
+                    isFileLoading ? (
+                      <div className="flex items-center gap-2">
+                        <div className="animate-spin h-4 w-4 border-2 border-purple-500 border-t-transparent rounded-full"></div>
+                        <span className="text-sm text-[var(--text-secondary)]">Loading summary...</span>
+                      </div>
+                    ) : file?.summary ? (
+                      <p className="text-sm text-[var(--text-secondary)] whitespace-pre-wrap">
+                        {file.summary}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-[var(--text-muted)]">
+                        No AI summary available for this file
+                      </p>
+                    )
                   ) : (
                     <p className="text-sm text-[var(--text-secondary)]">
                       AI-generated file summary will appear here when you select
