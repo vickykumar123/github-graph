@@ -9,6 +9,7 @@ import {useGetRepository, useGetFile, useGetDependencyGraph} from "@/hooks/query
 import {useTaskPolling} from "@/hooks/query/task";
 import {FileTree} from "@/components/file-tree";
 import {DependencyGraph} from "@/components/dependency-graph";
+import {ChatPanel} from "@/components/chat";
 import Markdown from "react-markdown";
 import {Prism as SyntaxHighlighter} from "react-syntax-highlighter";
 import {oneDark} from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -87,6 +88,12 @@ export default function Explorer() {
 
   // State for view mode (code viewer vs dependency graph)
   const [viewMode, setViewMode] = useState<ViewMode>("code");
+
+  // State for chat panel
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Get sessionId from localStorage (key: "github_explorer_session_id")
+  const sessionId = localStorage.getItem("github_explorer_session_id") || undefined;
 
   // Step 1: Fetch repository status (runs on mount and reload)
   const {
@@ -291,7 +298,7 @@ export default function Explorer() {
             </div>
           </div>
 
-          {/* View Toggle + Status */}
+          {/* View Toggle + Chat + Status */}
           <div className="flex items-center gap-4">
             {/* View Mode Toggle - Only show when completed */}
             {isCompleted && (
@@ -323,6 +330,19 @@ export default function Explorer() {
                   Graph
                 </button>
               </div>
+            )}
+
+            {/* Chat Button - Only show when completed */}
+            {isCompleted && (
+              <button
+                onClick={() => setIsChatOpen(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-xs font-medium transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+                Ask AI
+              </button>
             )}
 
             {/* Status Badge */}
@@ -621,6 +641,15 @@ export default function Explorer() {
             )}
           </main>
         </div>
+
+        {/* Chat Panel (Slide-out Drawer) */}
+        <ChatPanel
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          sessionId={sessionId}
+          repoId={repoId}
+          repoName={repository?.full_name}
+        />
       </div>
     );
   }
