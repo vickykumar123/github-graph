@@ -6,8 +6,6 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { getSessionIdFromStorage } from "@/utils/storage";
 import Home from "@/pages/Home";
 import Explorer from "@/pages/Explorer";
-import Graph from "@/pages/Graph";
-import Settings from "@/pages/Settings";
 
 // Protected Route Component
 function ProtectedRoute({
@@ -49,26 +47,6 @@ function App() {
           element={
             <ProtectedRoute requiresRepo={true}>
               <Explorer />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Graph Page - Protected (requires session + repo) */}
-        <Route
-          path="/graph/:repoId"
-          element={
-            <ProtectedRoute requiresRepo={true}>
-              <Graph />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Settings Page - Protected (requires session) */}
-        <Route
-          path="/settings"
-          element={
-            <ProtectedRoute>
-              <Settings />
             </ProtectedRoute>
           }
         />
