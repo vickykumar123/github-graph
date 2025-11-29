@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <!-- Background circle -->
+  <circle cx="50" cy="50" r="45" fill="#0a0a0f" stroke="#1f1f2e" stroke-width="2"/>
+
+  <!-- Code brackets -->
+  <path
+    d="M30 35 L20 50 L30 65"
+    stroke="#a855f7"
+    stroke-width="4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+  />
+  <path
+    d="M70 35 L80 50 L70 65"
+    stroke="#ec4899"
+    stroke-width="4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+  />
+
+  <!-- Network nodes - representing dependency graph -->
+  <circle cx="40" cy="40" r="6" fill="#a855f7"/>
+  <circle cx="60" cy="40" r="6" fill="#ec4899"/>
+  <circle cx="50" cy="55" r="7" fill="#3b82f6"/>
+  <circle cx="40" cy="68" r="5" fill="#a855f7" opacity="0.7"/>
+  <circle cx="60" cy="68" r="5" fill="#ec4899" opacity="0.7"/>
+
+  <!-- Connecting lines -->
+  <path
+    d="M40 46 L50 50 M60 46 L50 50 M50 62 L40 65 M50 62 L60 65"
+    stroke="white"
+    stroke-opacity="0.4"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+</svg>
