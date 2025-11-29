@@ -10,27 +10,17 @@ import Explorer from "@/pages/Explorer";
 // Protected Route Component
 function ProtectedRoute({
   children,
-  requiresRepo = false,
 }: {
   children: React.ReactNode;
-  requiresRepo?: boolean;
 }) {
   const sessionId = getSessionIdFromStorage();
 
-  // Check sessionId
+  // Check sessionId - redirect to home if not found
   if (!sessionId) {
     return <Navigate to="/" replace />;
   }
 
-  // Check repoId if required (from URL params or localStorage)
-  if (requiresRepo) {
-    // TODO: Check if repoId exists (we'll add this logic later)
-    const repoId = localStorage.getItem("current_repo_id");
-    if (!repoId) {
-      return <Navigate to="/" replace />;
-    }
-  }
-
+  // repoId comes from URL params, no need to check localStorage
   return <>{children}</>;
 }
 
@@ -41,11 +31,11 @@ function App() {
         {/* Home Page - Public */}
         <Route path="/" element={<Home />} />
 
-        {/* Explorer Page - Protected (requires session + repo) */}
+        {/* Explorer Page - Protected (requires session, repoId from URL) */}
         <Route
           path="/explorer/:repoId"
           element={
-            <ProtectedRoute requiresRepo={true}>
+            <ProtectedRoute>
               <Explorer />
             </ProtectedRoute>
           }
