@@ -71,7 +71,7 @@ class QueryService:
         print(f"✅ Query Service initialized: {self.provider} ({self.model})")
 
         # Initialize services
-        self.vector_search = VectorSearchService(api_key)
+        self.vector_search = VectorSearchService(api_key, provider=self.provider)
         self.conversation_service = ConversationService()
         self.message_service = MessageService()
 

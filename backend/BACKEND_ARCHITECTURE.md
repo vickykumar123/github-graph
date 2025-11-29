@@ -776,7 +776,7 @@ async def process_repository_files(repo_id, session_id, task_id, api_key):
 
     # 2. Initialize services with session config
     ai_service = AIService(api_key=api_key, provider=provider, model=model)
-    embedding_service = EmbeddingService(api_key=api_key)
+    embedding_service = EmbeddingService(api_key=api_key, provider=provider)
 
     # 3. Process files in batches
     for batch in batches:

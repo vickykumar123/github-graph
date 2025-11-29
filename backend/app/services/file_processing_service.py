@@ -97,8 +97,8 @@ class FileProcessingService:
             api_key_check = api_key[:10] + "..." if api_key else "None"
             print(f"✅ After AI Service init, api_key is: {api_key_check}", flush=True)
 
-            print(f"🔧 Initializing Embedding Service with api_key={'present' if api_key else 'None'}", flush=True)
-            embedding_service = EmbeddingService(api_key=api_key)
+            print(f"🔧 Initializing Embedding Service with api_key={'present' if api_key else 'None'}, provider={provider}", flush=True)
+            embedding_service = EmbeddingService(api_key=api_key, provider=provider)
 
             # step 1: Get repository document
             repo_doc = await self.repo_service.get_repository(repo_id)

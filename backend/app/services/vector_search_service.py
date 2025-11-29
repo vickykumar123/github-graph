@@ -26,15 +26,16 @@ class VectorSearchService:
     Uses MongoDB Atlas Vector Search with cosine similarity.
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, provider: Optional[str] = None):
         """
         Initialize Vector Search Service.
 
         Args:
             api_key: API key for embedding generation (if needed)
+            provider: AI provider (openai, fireworks, etc.) - from session preferences
         """
         self.file_service = FileService()
-        self.embedding_service = EmbeddingService(api_key)
+        self.embedding_service = EmbeddingService(api_key, provider=provider)
         self.keyword_scorer = KeywordScorer()  # For hybrid search
 
     async def search_code(

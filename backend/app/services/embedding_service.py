@@ -28,12 +28,13 @@ class EmbeddingService:
     - Others: Their respective embedding models
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, provider: str = None):
         """
         Initialize Embedding Service.
 
         Args:
             api_key: API key for provider embeddings (required)
+            provider: AI provider (openai, fireworks, etc.) - from session preferences
         """
         if not api_key:
             raise ValueError("API key is required for embeddings")
@@ -41,7 +42,8 @@ class EmbeddingService:
         self.file_service = FileService()
         self.embedding_dimension = 768
 
-        self.provider = settings.ai_provider or "openai"
+        # Use provider from session, fall back to settings
+        self.provider = provider or settings.ai_provider or "openai"
         config = ProviderConfig.get_provider_config(self.provider)
 
         self.client = AsyncOpenAI(

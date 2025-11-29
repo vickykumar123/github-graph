@@ -3,13 +3,14 @@
  * Protected: Requires sessionId and repoId
  */
 
-import {useParams} from "react-router-dom";
+import {useParams, Link} from "react-router-dom";
 import {useEffect, useState, useRef} from "react";
 import {useGetRepository, useGetFile, useGetDependencyGraph} from "@/hooks/query/repository";
 import {useTaskPolling} from "@/hooks/query/task";
 import {FileTree} from "@/components/file-tree";
 import {DependencyGraph} from "@/components/dependency-graph";
 import {ChatPanel} from "@/components/chat";
+import {GitWalkIcon} from "@/components/icons";
 import Markdown from "react-markdown";
 import {Prism as SyntaxHighlighter} from "react-syntax-highlighter";
 import {oneDark} from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -166,8 +167,13 @@ export default function Explorer() {
       timerRef.current = null;
     }
 
+    // Don't do anything while loading - wait for repository data
+    if (isLoading) {
+      return;
+    }
+
     if (!isProcessing || repository?.file_count === undefined || !repoId) {
-      // Not processing - cleanup
+      // Not processing - cleanup (only after we've loaded and confirmed not processing)
       timerInitializedRef.current = null;
       localStorage.removeItem(TIMER_STORAGE_KEY);
       return;
@@ -232,7 +238,7 @@ export default function Explorer() {
         timerRef.current = null;
       }
     };
-  }, [isProcessing, repository?.file_count, repoId]);
+  }, [isLoading, isProcessing, repository?.file_count, repoId]);
 
   // Loading state
   if (isLoading) {
@@ -287,19 +293,42 @@ export default function Explorer() {
       <div className="h-screen flex flex-col bg-[var(--bg-primary)] text-[var(--text-primary)]">
         {/* Top Header Bar */}
         <header className="h-14 flex items-center justify-between px-4 border-b border-[var(--border-color)] bg-[var(--bg-secondary)] shrink-0">
-          <div className="flex items-center gap-3">
-            {/* Repo Icon */}
-            <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
-              <svg className="w-4 h-4 text-purple-400" fill="currentColor" viewBox="0 0 16 16">
-                <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z" />
-              </svg>
-            </div>
-            <div>
-              <h1 className="font-semibold text-sm">{repository?.full_name}</h1>
-              <p className="text-xs text-[var(--text-muted)]">
-                {repository?.file_count} files
-                {repository?.language && ` • ${repository.language}`}
-              </p>
+          <div className="flex items-center gap-4">
+            {/* Home Link with GitWalk Logo */}
+            {isProcessing ? (
+              <div
+                className="opacity-50 cursor-not-allowed"
+                title="Please wait for processing to complete"
+              >
+                <GitWalkIcon className="w-8 h-8" />
+              </div>
+            ) : (
+              <Link
+                to="/"
+                className="hover:opacity-80 transition-opacity"
+                title="Back to Home"
+              >
+                <GitWalkIcon className="w-8 h-8" />
+              </Link>
+            )}
+
+            {/* Divider */}
+            <div className="h-6 w-px bg-[var(--border-color)]" />
+
+            {/* Repo Info */}
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                <svg className="w-4 h-4 text-purple-400" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8ZM5 12.25a.25.25 0 0 1 .25-.25h3.5a.25.25 0 0 1 .25.25v3.25a.25.25 0 0 1-.4.2l-1.45-1.087a.249.249 0 0 0-.3 0L5.4 15.7a.25.25 0 0 1-.4-.2Z" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="font-semibold text-sm">{repository?.full_name}</h1>
+                <p className="text-xs text-[var(--text-muted)]">
+                  {repository?.file_count} files
+                  {repository?.language && ` • ${repository.language}`}
+                </p>
+              </div>
             </div>
           </div>
 
